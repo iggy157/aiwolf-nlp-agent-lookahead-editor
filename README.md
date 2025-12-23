@@ -13,6 +13,7 @@
 git clone https://github.com/aiwolfdial/aiwolf-nlp-agent-llm.git
 cd aiwolf-nlp-agent-llm
 cp config/.env.example config/.env
+cp config/config.jp.yml.example config/config.yml
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .

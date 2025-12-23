@@ -33,6 +33,15 @@ def execute(config_path: Path) -> None:
         config = yaml.safe_load(f)
         logger.info("設定ファイルを読み込みました")
 
+    profiles_path = config_path.parent / "profiles.yml"
+    if profiles_path.exists():
+        with Path.open(profiles_path) as f:
+            profiles_config = yaml.safe_load(f)
+            config["profiles"] = profiles_config.get("profiles", [])
+            logger.info("プロファイルファイルを読み込みました")
+    else:
+        config["profiles"] = []
+
     agent_num = int(config["agent"]["num"])
     threads: list[multiprocessing.Process] = []
     for i in range(agent_num):
