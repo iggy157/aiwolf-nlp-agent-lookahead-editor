@@ -10,41 +10,46 @@ agent:
 
 llm:
   type: google
-  sleep_time: 3
+  sleep_time: 0
 
 openai:
-  model: gpt-4o-mini
-  temperature: 0.7
+  model: gpt-5.2
+  reasoning: {"effort": "none"}
+  temperature: 1.0
+  top_p: 1.0
 
 google:
-  model: gemini-2.0-flash-lite
-  temperature: 0.7
+  model: gemini-3-pro-preview
+  temperature: 1.0
 
 ollama:
   model: llama3.1
   temperature: 0.7
   base_url: http://localhost:11434
 
+claude:
+  model: claude-opus-4-5-20251101
+
 prompt:
   initialize: |-
-    あなたは人狼ゲームのエージェントです。
-    あなたの名前は{{ info.agent }}です。
-    あなたの役職は{{ role.value }}です。
-
-    これからゲームを進行していきます。リクエストが来た際には、日本語で適切な応答を返してください。
-
-    トークリクエストと囁きリクエストに対しては、ゲーム内で発言するべき内容のみを出力してください。
-    履歴がある場合は、それを参考にしてください。ない場合は、適切な内容を出力してください。
-    これ以上の情報を得られないと考えたときなどトークを終了したい場合については「Over」と出力してください。
-
-    他のリクエストに対しては、行動の対象となるエージェントの名前のみを出力してください。
-    対象となる生存しているエージェントの一覧が付与されています。
-
-    {% if info.profile is not none -%}
-    あなたのプロフィール: {{ info.profile }}
-    {%- endif %}
-
-    あなたのレスポンスはそのままゲーム内に送信されるため、不要な情報を含めないでください。
+    あなたは人狼ゲームの台本を作成する作家です。
+    以下に示す登場人物で行われる人狼ゲームの様子を記述した台本を作成します。
+    人狼ゲーム台本記述のための基本設定
+    登場人物一覧:
+    {% for profile in profiles -%}
+    - name: {{ profile.name }}
+      {{ profile.role }}
+      age: {{ profile.age }}
+      gender: {{ profile.gender }}
+      personality: {{ profile.personality }}
+    {% endfor %}
+    役職一覧
+    村人 × 2
+    占い師 × 1
+    狂人 × 1
+    人狼 × 1
+    台本にはこれらの登場人物や役職以外を出現させないでください。
+    与えられた指示に従って、台本を作成してください。
   daily_initialize: |-
     昼開始リクエスト
     {{ info.day }}日目
@@ -73,11 +78,53 @@ prompt:
     {{ w.agent }}: {{ w.text }}
     {% endfor %}
   talk: |-
-    トークリクエスト
+    登場人物一覧:
+    {% for profile in profiles -%}
+    - name: {{ profile.name }}
+      {{ profile.role }}
+      age: {{ profile.age }}
+      gender: {{ profile.gender }}
+      personality: {{ profile.personality }}
+    {% endfor %}
+    {% if info.day == 0 -%}
+    0日目のルール: 
+    - 全員が初対面
+    - 占い結果無し
+    - 人狼による襲撃無し
+    - 投票なし
+    {% elif info.day == 1 -%}
+    1日目のルール：
+    - 占い結果あり
+    - 人狼による襲撃無し
+    - 投票あり（必ずそれぞれが誰か一人に投票しなければならない。）
+    {%- else -%}
+    {{ info.day }}日目のルール: 
+    - 占い結果あり
+    - 人狼による襲撃あり
+    - 投票あり（必ずそれぞれが誰か一人に投票しなければならない。）
+    {%- endif %}
+    出力形式の指示: 
+    トークは　名前: セリフ
+    投票は　名前: 投票先
+    占いは　名前: 占い相手, 結果（HUMAN / WEREWOLF）
+    襲撃　名前: 襲撃相手
+    各日生存者の間で4周、会話をまわす（各生存者が4回ずつは発話をする）
+    勝利条件
+    人狼陣営の勝利条件：村人陣営は1人以下にする
+    村人陣営の勝利条件：人狼を追放する
+    {% if talk_history -%}
+    以下はここまでの履歴です。
     履歴:
-    {% for w in talk_history[sent_talk_count:] -%}
+    {% for w in talk_history -%}
     {{ w.agent }}: {{ w.text }}
     {% endfor %}
+    {{ info.agent }}: 
+    {{ info.day }}日目の残り{{ info.remain_count }}ターンの台本をすべて記述してください。
+    出力は追記分のみ記述してください。
+    {%- else -%}
+    {{ info.agent }}: 
+    台本の作成を開始してください。
+    {%- endif %}
   daily_finish: |-
     昼終了リクエスト
     履歴:
@@ -105,6 +152,13 @@ prompt:
     {%- endif %}
   divine: |-
     占いリクエスト
+    履歴:
+    {% for w in talk_history -%}
+    {{ w.agent }}: {{ w.text }}
+    {% endfor %}
+    ここまでの議論を踏まえて、占い対象となる登場人物のなかから
+    もっとも適切な占い対象を一人選んで、
+    その登場人物名のみを出力してください。
     対象:
     {% for k, v in info.status_map.items() -%}
     {%- if v == 'ALIVE' -%}
@@ -121,6 +175,13 @@ prompt:
     {%- endfor %}
   vote: |-
     投票リクエスト
+    履歴:
+    {% for w in talk_history -%}
+    {{ w.agent }}: {{ w.text }}
+    {% endfor %}
+    ここまでの議論を踏まえて、投票対象となる登場人物のなかから
+    もっとも適切な投票対象を一人選んで、
+    その登場人物名のみを出力してください。
     対象:
     {% for k, v in info.status_map.items() -%}
     {%- if v == 'ALIVE' -%}
@@ -129,6 +190,13 @@ prompt:
     {%- endfor %}
   attack: |-
     襲撃リクエスト
+    履歴:
+    {% for w in talk_history -%}
+    {{ w.agent }}: {{ w.text }}
+    {% endfor %}
+    ここまでの議論を踏まえて、襲撃対象となる登場人物のなかから
+    もっとも適切な襲撃対象を一人選んで、
+    その登場人物名のみを出力してください。
     対象:
     {% for k, v in info.status_map.items() -%}
     {%- if v == 'ALIVE' -%}
